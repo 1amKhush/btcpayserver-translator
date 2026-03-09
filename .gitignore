@@ -16,6 +16,7 @@ obj/
 .vscode/
 *.user
 *.suo
+*.idea
 
 # OS generated files
 .DS_Store

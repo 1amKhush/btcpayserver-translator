@@ -34,7 +34,7 @@ public class BaseTranslationService : ITranslationService
         
         _model = Environment.GetEnvironmentVariable("OPENROUTER_MODEL") ?? 
                 configuration["TranslationService:OpenRouter:Model"] ?? 
-                "anthropic/claude-3.5-sonnet";
+                "anthropic/claude-3.6-sonnet";
 
         // Optimized for speed but still safe
         _semaphore = new SemaphoreSlim(2); // 2 concurrent requests max to avoid rate limits
@@ -67,36 +67,20 @@ Your goal is to produce clear, professional, and user-friendly translations suit
 
 ## Guidelines
 
-• Keep technical and cryptocurrency terms in their commonly used form, preferably using transliteration when appropriate.
+- For cryptocurrency and blockchain-specific terms (Bitcoin, Lightning, wallet types, etc.): use transliteration into the target language's script, or keep the English term if no transliteration is natural.
+- For standard UI terms (Settings, Invoice, Dashboard, etc.): use the officially accepted translation in the target language if one exists and is widely used. Otherwise, transliterate.
+- Use a formal tone, appropriate for financial applications.
+- Keep placeholder variables like {{0}}, {{1}} unchanged.
+- Preserve HTML tags and special formatting as-is.
+- Never translate a term literally word-by-word if the result is unnatural or unused in the target language.
+- Ensure proper sentence structure according to the target language's grammar rules.
 
-• Retain key terms such as Bitcoin, Lightning, and other crypto-specific terms as-is or transliterated into the target language.
+## English Translation Examples
 
-• Use a formal tone, appropriate for financial applications.
-
-• Keep placeholder variables like {{0}}, {{1}} unchanged.
-
-• Preserve HTML tags and special formatting as-is.
-
-• Prefer transliteration over translation for standard UI terms unless there is a widely accepted translated equivalent.
-
-• Ensure proper sentence structure according to the target language's grammar rules.
-
-## Examples
-
-| English Text | Hindi Translation | Spanish Translation | French Translation |
-|--------------|-------------------|---------------------|-------------------|
-| ""Hot wallet"" | ""हॉट वॉलेट"" | ""Hot wallet"" | ""Portefeuille chaud"" |
-| ""Invoice"" | ""इनवॉइस"" | ""Factura"" | ""Facture"" |
-| ""Settings"" | ""सेटिंग्स"" | ""Configuración"" | ""Paramètres"" |
-| ""Payment successful"" | ""भुगतान सफल हुआ"" | ""Pago exitoso"" | ""Paiement réussi"" |
-
-
-Edge Cases:
-
-- If the term is widely used as-is in the target language (e.g., “Invoice”), prefer transliteration in non-English languages.
-- If a clear translation exists and is commonly used (e.g., “Settings” → “Paramètres” in French), use the translated term.
-- Do not translate placeholders or variables.
-- Do not explain your translation — output only the final translated string.
+- ""Hot wallet"" -> Hindi: ""हॉट वॉलेट"" | Spanish: ""Hot wallet"" | French: ""Hot wallet""
+- ""Invoice"" -> Hindi: ""इनवॉइस"" | Spanish: ""Factura"" | French: ""Facture""
+- ""Settings"" -> Hindi: ""सेटिंग्स"" | Spanish: ""Configuración"" | French: ""Paramètres""
+- ""Payment successful"" -> Hindi: ""भुगतान सफल हुआ"" | Spanish: ""Pago exitoso"" | French: ""Paiement réussi""
 
 Respond with only the translated text.
 No explanations, no additional formatting, no comments."
@@ -106,9 +90,8 @@ No explanations, no additional formatting, no comments."
                             content = request.SourceText
                         }
                     },
-                    max_tokens = 150, // Reduced for faster response
-                    temperature = 0.0, // More deterministic
-                    top_p = 0.9
+                    max_tokens = 400, // Reduced for faster response
+                    temperature = 0.0 // More deterministic
                 };
 
                 var json = JsonSerializer.Serialize(requestBody);
