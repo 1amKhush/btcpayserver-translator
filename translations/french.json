@@ -714,7 +714,7 @@
   "Example": "Exemple",
   "Expiration Date": "Date d'expiration",
   "Expire": "Expirer",
-  "Expire invoice in …": "Expirer la facture dans ...", //
+  "Expire invoice in …": "Expiration de la facture dans ...",
   "Expired": "Expiré",
   "expired with partial payments": "expiré avec paiements incomplets",
   "Expires in": "Expire dans",
@@ -771,7 +771,7 @@
   "For anything with a custom amount": "Pour tout les éléments avec un montant personnalisé",
   "for lifetime": "à vie",
   "For many email providers (like Gmail) your login is your email address.": "Pour de nombreux services de messagerie (comme Gmail), votre identifiant est votre adresse e-mail.",
-  "For the macaroon options you need to provide a macaroon with the <code>invoices:write</code> permission (e.g. <code>invoice.macaroon</code>. If you want to display the node connection details, it also needs the <code>info:read</code> permission.": "Pour les options de macarons, vous devez fournir un macaron avec la permission <code>invoices:write</code> (par exemple <code>invoice.macaroon</code>). Si vous souhaitez afficher les détails de connexion du nœud, il nécessite également la permission <code>info:read</code>.", //
+  "For the macaroon options you need to provide a macaroon with the <code>invoices:write</code> permission (e.g. <code>invoice.macaroon</code>. If you want to display the node connection details, it also needs the <code>info:read</code> permission.": "Pour les options de macaroon, vous devez fournir un fichier avec la permission <code>invoices:write</code> (par exemple <code>invoice.macaroon</code>). Si vous souhaitez afficher les détails de connexion du nœud, la permission <code>info:read</code> est requise.",
   "For wallet compatibility: Bech32 encoded (classic) vs. cleartext URL (upcoming)": "Pour la compatibilité du portefeuille : Bech32 encodé (classique) vs. URL en texte clair (à venir)",
   "Forgot password?": "Mot de passe oublié ?",
   "Form config was invalid: {0}": "La configuration du formulaire n'était pas valide : {0}",
@@ -791,7 +791,7 @@
   "Generate {0} Wallet": "Générer un portefeuille {0}",
   "Generate a brand-new wallet to use": "Générer un nouveau portefeuille à utiliser",
   "Generate a new api key to use BTCPay through its API.": "Générer une nouvelle clé API pour utiliser BTCPay via son API.",
-  "Generate a QR code of the extended public key in your wallet (see instructions for supported wallets below).\n    Allow the browser access to your camera and hold the code to the camera when the scan prompt appears.": "Générez un QR code de la clé publique étendue dans votre portefeuille (voir les instructions pour les portefeuilles compatibles ci-dessous).\n    Autorisez l'accès du navigateur à votre caméra et présentez le code devant la caméra lorsque l'invite de scan apparaît.", //
+  "Generate a QR code of the extended public key in your wallet (see instructions for supported wallets below).\n    Allow the browser access to your camera and hold the code to the camera when the scan prompt appears.": "Générez un QR code de la clé publique (xPub) dans votre portefeuille (voir les instructions pour les portefeuilles compatibles ci-dessous).\n    Autorisez l'accès du navigateur à votre caméra et présentez le QR-code devant la caméra au moment du scan.",
   "Generate another address": "Générer une nouvelle adresse",
   "Generate API Key": "Générer une clé API",
   "Generate Key": "Générer une clé",
