@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -14,6 +15,21 @@ namespace BTCPayTranslator.Services;
 
 public class BaseTranslationService : ITranslationService
 {
+    private static readonly Regex PlaceholderRegex =
+        new(@"\{[A-Za-z0-9_]+\}", RegexOptions.Compiled);
+
+    private static readonly Regex[] SuspiciousMetaPatterns =
+    {
+        new(@"\bplease provide (the )?english text\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\bi\s*(?:am|'m) ready to translate\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\btranslate english text to\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\bi understand(?:\s+the\s+instructions)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\bi don't see any text\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\byou haven't provided any text\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\bprofessional translator for btcpay server\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\bas an ai\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)
+    };
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<BaseTranslationService> _logger;
     private readonly string _apiKey;
@@ -44,13 +60,14 @@ public class BaseTranslationService : ITranslationService
 
     public async Task<TranslationResponse> TranslateAsync(TranslationRequest request)
     {
-        var maxRetries = 2; // Reduced retries for speed
+        var maxRetries = 3;
         
         for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
             try
             {
-                // Optimized prompt for faster processing
+                var strictMode = attempt > 1;
+
                 var requestBody = new
                 {
                     model = _model,
@@ -58,40 +75,15 @@ public class BaseTranslationService : ITranslationService
                     {
                         new { 
                             role = "system", 
-                            content = $@"You are a professional translator for BTCPay Server, a Bitcoin payment processor.
-Translate the given English text to {request.TargetLanguage}.
-
-## Context
-This text is UI content for a BTCPayServer payment system.
-Your goal is to produce clear, professional, and user-friendly translations suitable for financial software.
-
-## Guidelines
-
-- For cryptocurrency and blockchain-specific terms (Bitcoin, Lightning, wallet types, etc.): use transliteration into the target language's script, or keep the English term if no transliteration is natural.
-- For standard UI terms (Settings, Invoice, Dashboard, etc.): use the officially accepted translation in the target language if one exists and is widely used. Otherwise, transliterate.
-- Use a formal tone, appropriate for financial applications.
-- Keep placeholder variables like {{0}}, {{1}} unchanged.
-- Preserve HTML tags and special formatting as-is.
-- Never translate a term literally word-by-word if the result is unnatural or unused in the target language.
-- Ensure proper sentence structure according to the target language's grammar rules.
-
-## English Translation Examples
-
-- ""Hot wallet"" -> Hindi: ""हॉट वॉलेट"" | Spanish: ""Hot wallet"" | French: ""Hot wallet""
-- ""Invoice"" -> Hindi: ""इनवॉइस"" | Spanish: ""Factura"" | French: ""Facture""
-- ""Settings"" -> Hindi: ""सेटिंग्स"" | Spanish: ""Configuración"" | French: ""Paramètres""
-- ""Payment successful"" -> Hindi: ""भुगतान सफल हुआ"" | Spanish: ""Pago exitoso"" | French: ""Paiement réussi""
-
-Respond with only the translated text.
-No explanations, no additional formatting, no comments."
+                            content = BuildSystemPrompt(request.TargetLanguage, strictMode)
                         },
                         new { 
                             role = "user", 
-                            content = request.SourceText
+                            content = $"Key: {request.Key}\nSource text: {request.SourceText}"
                         }
                     },
-                    max_tokens = 400, // Reduced for faster response
-                    temperature = 0.0 // More deterministic
+                    max_tokens = 220,
+                    temperature = 0.0
                 };
 
                 var json = JsonSerializer.Serialize(requestBody);
@@ -144,6 +136,24 @@ No explanations, no additional formatting, no comments."
                     var translatedText = contentElement.GetString()?.Trim();
                     if (!string.IsNullOrEmpty(translatedText))
                     {
+                        if (!IsValidTranslationOutput(request.SourceText, translatedText, out var reason))
+                        {
+                            _logger.LogWarning(
+                                "Rejected suspicious translation for key '{Key}' (attempt {Attempt}/{MaxRetries}): {Reason}",
+                                request.Key,
+                                attempt,
+                                maxRetries,
+                                reason);
+
+                            if (attempt == maxRetries)
+                            {
+                                return new TranslationResponse(request.Key, request.SourceText, false, reason);
+                            }
+
+                            await Task.Delay(800);
+                            continue;
+                        }
+
                         return new TranslationResponse(request.Key, translatedText, true);
                     }
                 }
@@ -258,5 +268,81 @@ No explanations, no additional formatting, no comments."
     public void Dispose()
     {
         _semaphore?.Dispose();
+    }
+
+    private static string BuildSystemPrompt(string targetLanguage, bool strictMode)
+    {
+        var strictRules = strictMode
+            ? "\n\nSTRICT RETRY MODE: Your previous answer was invalid. Do not ask for more input. Return only the final translated UI string."
+            : string.Empty;
+
+        return $@"You are translating a single BTCPay Server UI string to {targetLanguage}.
+
+Rules:
+- Output only the translation text for this one string.
+- Never ask for more text or context.
+- Never mention instructions, prompts, role, AI, or translation process.
+- Preserve placeholders exactly (examples: {{0}}, {{OrderId}}, {{InvoiceId}}).
+- Preserve HTML tags and entities exactly.
+- Keep financial/crypto terms natural for the target language.
+- If a term is typically used in English in that language, keep it in English.
+
+Return only the translated string.{strictRules}";
+    }
+
+    private static bool IsValidTranslationOutput(string sourceText, string translatedText, out string reason)
+    {
+        if (IsSuspiciousMetaResponse(translatedText))
+        {
+            reason = "Suspicious LLM/meta-response content";
+            return false;
+        }
+
+        if (!HasMatchingPlaceholders(sourceText, translatedText))
+        {
+            reason = "Placeholder/token mismatch";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool IsSuspiciousMetaResponse(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return SuspiciousMetaPatterns.Any(pattern => pattern.IsMatch(text));
+    }
+
+    private static bool HasMatchingPlaceholders(string source, string translation)
+    {
+        var sourceTokens = ExtractTokenCounts(source);
+        var translationTokens = ExtractTokenCounts(translation);
+
+        if (sourceTokens.Count != translationTokens.Count)
+            return false;
+
+        foreach (var token in sourceTokens)
+        {
+            if (!translationTokens.TryGetValue(token.Key, out var count) || count != token.Value)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static Dictionary<string, int> ExtractTokenCounts(string text)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (Match match in PlaceholderRegex.Matches(text))
+        {
+            if (!counts.TryAdd(match.Value, 1))
+                counts[match.Value]++;
+        }
+
+        return counts;
     }
 }
