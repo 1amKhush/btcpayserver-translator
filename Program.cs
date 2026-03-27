@@ -46,7 +46,8 @@ class Program
             CreateStatusCommand(serviceProvider),
             CreateUpdateCommand(serviceProvider),
             CreateBatchUpdateCommand(serviceProvider),
-            CreateUpdateAllCommand(serviceProvider)
+            CreateUpdateAllCommand(serviceProvider),
+            CreateValidatePacksCommand(serviceProvider)
         };
 
         return await rootCommand.InvokeAsync(args);
@@ -65,6 +66,7 @@ class Program
         services.AddTransient<TranslationExtractor>();
         services.AddTransient<FileWriter>();
         services.AddTransient<TranslationOrchestrator>();
+        services.AddTransient<LanguagePackValidator>();
 
         services.AddTransient<ITranslationService, BaseTranslationService>();
     }
@@ -405,6 +407,62 @@ class Program
             
             Environment.Exit(successCount == totalCount ? 0 : 1);
         }, continueOnErrorOption, btcpayUrlOption);
+
+        return command;
+    }
+
+    private static Command CreateValidatePacksCommand(ServiceProvider serviceProvider)
+    {
+        var fixOption = new Option<bool>(
+            "--fix",
+            "Automatically replaces suspicious entries with the source English key value.");
+
+        var command = new Command(
+            "validate-packs",
+            "Validate translation JSON files for suspicious LLM/meta responses and placeholder mismatches")
+        {
+            fixOption
+        };
+
+        command.SetHandler(async (fix) =>
+        {
+            using var scope = serviceProvider.CreateScope();
+            var validator = scope.ServiceProvider.GetRequiredService<LanguagePackValidator>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            logger.LogInformation("Validating translation packs (fix mode: {FixMode})", fix);
+            var result = await validator.ValidateAsync(fix);
+
+            if (fix)
+            {
+                logger.LogInformation("Re-running validation after fixes");
+                result = await validator.ValidateAsync(false);
+            }
+
+            logger.LogInformation(
+                "Validation completed: {FilesScanned} files, {EntriesScanned} entries, {IssueCount} issues",
+                result.FilesScanned,
+                result.EntriesScanned,
+                result.Issues.Count);
+
+            if (result.Issues.Count > 0)
+            {
+                foreach (var issue in result.Issues.Take(200))
+                {
+                    logger.LogError("{File}: '{Key}' -> {Reason}", issue.FileName, issue.Key, issue.Reason);
+                }
+
+                if (result.Issues.Count > 200)
+                {
+                    logger.LogError("... {RemainingCount} more issue(s) omitted from log", result.Issues.Count - 200);
+                }
+
+                Environment.Exit(1);
+                return;
+            }
+
+            Environment.Exit(0);
+        }, fixOption);
 
         return command;
     }
