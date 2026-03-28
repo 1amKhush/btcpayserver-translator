@@ -18,16 +18,59 @@ public class BaseTranslationService : ITranslationService
     private static readonly Regex PlaceholderRegex =
         new(@"\{[A-Za-z0-9_]+\}", RegexOptions.Compiled);
 
+    private static readonly Regex TokenRegex =
+        new(@"[A-Za-z0-9+./_-]+", RegexOptions.Compiled);
+
     private static readonly Regex[] SuspiciousMetaPatterns =
     {
         new(@"\bplease provide (the )?english text\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\bwaiting for the english text\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"\bi\s*(?:am|'m) ready to translate\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\bready to translate english(?:\s+to\s+[a-z\s\-()]+)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"\btranslate english text to\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new(@"\bplease provide the text (?:you(?:'d)? like me to translate|you want me to translate|to translate)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"\bi understand(?:\s+the\s+instructions)?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"\bi don't see any text\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"\byou haven't provided any text\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"\bprofessional translator for btcpay server\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         new(@"\bas an ai\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)
+    };
+
+    private static readonly HashSet<string> TechnicalAllowTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "api",
+        "apis",
+        "btc",
+        "lnurl",
+        "lnurlp",
+        "auth",
+        "node",
+        "grpc",
+        "ssl",
+        "cipher",
+        "suite",
+        "suites",
+        "bolt11",
+        "bolt12",
+        "bip21",
+        "json",
+        "csv",
+        "http",
+        "https",
+        "url",
+        "uri",
+        "oauth",
+        "webhook",
+        "webhooks",
+        "docker",
+        "github",
+        "btcpay",
+        "bitcoin",
+        "lightning",
+        "nostr",
+        "nfc",
+        "tor",
+        "psbt"
     };
 
     private readonly HttpClient _httpClient;
@@ -67,6 +110,7 @@ public class BaseTranslationService : ITranslationService
             try
             {
                 var strictMode = attempt > 1;
+                var maxTokens = ComputeMaxTokens(request.SourceText);
 
                 var requestBody = new
                 {
@@ -79,10 +123,10 @@ public class BaseTranslationService : ITranslationService
                         },
                         new { 
                             role = "user", 
-                            content = $"Key: {request.Key}\nSource text: {request.SourceText}"
+                            content = request.SourceText
                         }
                     },
-                    max_tokens = 220,
+                    max_tokens = maxTokens,
                     temperature = 0.0
                 };
 
@@ -279,15 +323,28 @@ public class BaseTranslationService : ITranslationService
         return $@"You are translating a single BTCPay Server UI string to {targetLanguage}.
 
 Rules:
-- Output only the translation text for this one string.
+- Translate the full meaning faithfully. Do not summarize, simplify, or omit details.
+- Keep the original tone and intent (for example, command labels remain short/imperative).
+- Preserve placeholders exactly (examples: {{0}}, {{OrderId}}, {{InvoiceId}}).
+- Preserve HTML tags/entities, punctuation, casing, and line breaks exactly.
+- Keep technical/product names and standard crypto terms in English when commonly used.
+- Do not translate to English unless the source is already English-only technical jargon.
 - Never ask for more text or context.
 - Never mention instructions, prompts, role, AI, or translation process.
-- Preserve placeholders exactly (examples: {{0}}, {{OrderId}}, {{InvoiceId}}).
-- Preserve HTML tags and entities exactly.
-- Keep financial/crypto terms natural for the target language.
-- If a term is typically used in English in that language, keep it in English.
+- Output only the translated text for this one string, with no quotes or extra commentary.
 
 Return only the translated string.{strictRules}";
+    }
+
+    private static int ComputeMaxTokens(string sourceText)
+    {
+        if (string.IsNullOrEmpty(sourceText))
+            return 220;
+
+        // Approximate source tokens and allow expansion for longer target-language strings.
+        var estimatedTokens = (int)Math.Ceiling((sourceText.Length / 4.0) * 2.0);
+        var bounded = Math.Clamp(estimatedTokens, 220, 900);
+        return bounded;
     }
 
     private static bool IsValidTranslationOutput(string sourceText, string translatedText, out string reason)
@@ -301,6 +358,12 @@ Return only the translated string.{strictRules}";
         if (!HasMatchingPlaceholders(sourceText, translatedText))
         {
             reason = "Placeholder/token mismatch";
+            return false;
+        }
+
+        if (IsLikelySentenceFallback(sourceText, translatedText))
+        {
+            reason = "Suspicious source fallback (sentence-like translation equals source text)";
             return false;
         }
 
@@ -331,6 +394,42 @@ Return only the translated string.{strictRules}";
         }
 
         return true;
+    }
+
+    private static bool IsLikelySentenceFallback(string source, string translation)
+    {
+        if (!string.Equals(source, translation, StringComparison.Ordinal))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(source) || source.Length < 20)
+            return false;
+
+        if (PlaceholderRegex.IsMatch(source))
+            return false;
+
+        var words = source.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (words.Length < 4)
+            return false;
+
+        if (!source.Any(char.IsLower))
+            return false;
+
+        var tokens = TokenRegex.Matches(source).Select(match => match.Value).ToList();
+        if (tokens.Count == 0)
+            return false;
+
+        foreach (var token in tokens)
+        {
+            if (TechnicalAllowTokens.Contains(token))
+                continue;
+
+            if (token.All(ch => char.IsUpper(ch) || char.IsDigit(ch) || ch == '_' || ch == '-'))
+                continue;
+
+            return true;
+        }
+
+        return false;
     }
 
     private static Dictionary<string, int> ExtractTokenCounts(string text)

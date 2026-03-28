@@ -85,7 +85,9 @@ dotnet run -- validate-packs --fix
 
 This validator checks for:
 - LLM/meta-responses accidentally saved as translations (for example, "Please provide the English text...")
+- Additional assistant variants (for example, "I'm waiting for the English text...", "Ready to translate English...")
 - Placeholder/token mismatches between source keys and translated values (for example, `{0}`, `{OrderId}`)
+- Sentence-like source fallback in non-English packs where `value == key` for user-facing text
 
 CI also runs this validation on pull requests and pushes to `main`.
 
